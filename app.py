@@ -1,45 +1,47 @@
 from flask import Flask, request, jsonify
-import gspread
-from google.oauth2.service_account import Credentials
 
 app = Flask(__name__)
 
-# Path to your downloaded service account key file
-CREDENTIALS_FILE = 'C:/Users/rishi/Downloads/voice-assistant-456619-723bf8781d9e.json'
-
-# Name of your Google Sheet
-SPREADSHEET_NAME = 'SerialNumbers'
-
-# Name of the worksheet (tab) you are using
-WORKSHEET_NAME = 'Sheet1'
+VALID_NUMBERS_FILE = 'valid_numbers.txt'  # Name of your local text file
 
 def is_valid_number(number):
     try:
-        scope = [
-            'https://www.googleapis.com/auth/spreadsheets',
-            'https://www.googleapis.com/auth/drive'
-        ]
-        creds = Credentials.from_service_account_file(CREDENTIALS_FILE, scopes=scope)
-        gc = gspread.authorize(creds)
-        spreadsheet = gc.open(SPREADSHEET_NAME)
-        worksheet = spreadsheet.worksheet(WORKSHEET_NAME)
-        column_a = worksheet.col_values(1)  # Get all values from the first column (A)
-        return number in column_a
+        with open(VALID_NUMBERS_FILE, 'r') as f:
+            valid_numbers = [line.strip().lower() for line in f]
+        return str(number).strip().lower() in valid_numbers
+    except FileNotFoundError:
+        print(f"Error: File '{VALID_NUMBERS_FILE}' not found.")
+        return False
     except Exception as e:
-        print(f"Error accessing Google Sheet: {e}")
+        print(f"Error reading file: {e}")
         return False
 
-@app.route('/', methods=['POST'])
+@app.route('/', methods=['GET'])
 def exotel_webhook():
-    caller_input = request.form.get('caller_input')
+    caller_input = request.args.get('digits')
+    print(f"Received digits: '{caller_input}'")
+
     if caller_input:
-        if is_valid_number(caller_input):
+        cleaned_input = caller_input.strip('"')  # Remove double quotes
+        is_valid = is_valid_number(cleaned_input)
+        print(f"is_valid_number('{cleaned_input}') returned: {is_valid}")
+        if is_valid:
             response = {"status": "valid", "message": "Number found"}
+            print(f"Returning response: {response}, status: 200")
+            return jsonify(response), 200
         else:
             response = {"status": "invalid", "message": "Number not found"}
-        return jsonify(response)
+            print(f"Returning response: {response}, status: 400")
+            return jsonify(response), 400
     else:
-        return jsonify({"status": "error", "message": "No input received"}), 400
+        response = {"status": "error", "message": "No input received"}
+        print(f"Returning response: {response}, status: 400")
+        return jsonify(response), 400
+
+@app.route('/test', methods=['GET'])
+def test_endpoint():
+    print("Test endpoint was hit!")
+    return jsonify({"message": "Test endpoint reached"}), 200
 
 if __name__ == '__main__':
-    app.run(port=5000, debug=True)
+    app.run(port=5000, debug=True, host='0.0.0.0')
